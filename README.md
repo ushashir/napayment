@@ -48,11 +48,20 @@ every other module.
    `spring.data.redis.port` in `app/src/main/resources/application-dev.yml`
    together.
 
-2. Run the app against the `dev` profile:
+2. Build once so the sibling modules are in your local `~/.m2` repo, then run
+   the app against the `dev` profile:
 
    ```bash
-   ./mvnw -pl app -am spring-boot:run -Dspring-boot.run.profiles=dev
+   ./mvnw install -DskipTests
+   ./mvnw -f app/pom.xml spring-boot:run -Dspring-boot.run.profiles=dev
    ```
+
+   Use `-f app/pom.xml`, not `-pl app -am spring-boot:run` — `spring-boot:run`
+   isn't bound to a lifecycle phase, so with `-pl`/`-am` Maven executes it
+   against every project in the reactor build order (root aggregator POM
+   first), and fails immediately trying to run the parent `pom` as a Spring
+   Boot app ("Unable to find a suitable main class") before ever reaching
+   `app`. `-f app/pom.xml` targets `app` directly instead.
 
    The `dev` profile ships with safe non-secret defaults (matching
    `docker-compose.yml`) for the datasource, Redis, JWT signing secret, and
@@ -110,6 +119,32 @@ replaying the same key returns the identical response with zero duplicate
 rows; a USER-role token is rejected (403) from an admin-only endpoint; and a
 failed-auth attempt's `requestId` is verified present in the structured log
 output. Test classes live in `app/src/test/java/.../app/it/`.
+
+## Git workflow & branch protection
+
+`feature/<ticket>-<slug>` / `fix/<ticket>-<slug>` → PR into `dev` → PR `dev` →
+`main` (doc 4 §B.1 naming, with a `dev` integration branch in front of
+`main`). `dev` is the repository's default branch, so new PRs target it
+unless you explicitly point at `main`.
+
+Both `dev` and `main` are protected on GitHub:
+
+- **No direct pushes** — enforced for admins too; every change goes through a PR.
+- **Required status check**: `verify` ([`.github/workflows/ci.yml`](.github/workflows/ci.yml),
+  which runs `./mvnw clean verify` — compile, unit tests, and the
+  Testcontainers integration suite) must pass, and the branch must be up to
+  date with its base, before a PR can merge.
+- **No force-pushes, no branch deletion.**
+- **0 required approving reviews** — this is currently a solo repo, so
+  requiring an external approval would lock out merging your own PRs. Bump
+  `required_approving_review_count` on both branches once there's a second
+  collaborator:
+  ```bash
+  gh api -X PUT repos/ushashir/napayment/branches/<branch>/protection/required_pull_request_reviews \
+    -f required_approving_review_count=1
+  ```
+
+Feature/fix branches are auto-deleted on merge (`delete_branch_on_merge`).
 
 ## Environment variables
 
